@@ -248,3 +248,213 @@ def send_data(sock: socket.socket, server_address: tuple[str, int], packet: Pack
     log("UDP", f"Bytes enviados: {len(encoded_packet)}")
 
 
+# ============================================================
+# CLIENTE UDP COM STOP-AND-WAIT
+# ============================================================
+
+
+class UdpReliableClient:
+    def __init__(self, server_host: str, server_port: int, timeout: float):
+        self.server_address = (server_host, server_port)
+        self.timeout = timeout
+        self.seq = 0
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+
+        title("CLIENTE UDP3 INICIADO")
+        log("CLIENTE", f"Servidor configurado em {server_host}:{server_port}.")
+        log("CLIENTE", f"Timeout configurado em {timeout} segundo(s).")
+        log("CLIENTE", "Modo de envio: Stop-and-Wait.")
+        log("CLIENTE", "O cliente envia um pacote e aguarda o ACK antes do próximo.")
+        log("PROTOCOLO", "O número de sequência alterna entre 0 e 1.")
+
+
+    def close(self) -> None:
+        self.sock.close()
+        title("CLIENTE ENCERRADO")
+        log("CLIENTE", "Socket UDP do cliente fechado.")
+
+
+    def _drain_stray_packets(self) -> None:
+        """
+        Descarta quaisquer datagramas atrasados que ainda possam chegar
+        depois que uma mensagem já foi concluída (comum nos cenários de
+        atraso), evitando que "contaminem" o próximo envio.
+        """
+        self.sock.settimeout(0)
+        drained = 0
+        try:
+            while True:
+                self.sock.recvfrom(BUFFER_SIZE)
+                drained += 1
+        except (BlockingIOError, socket.timeout):
+            pass
+        finally:
+            self.sock.settimeout(None)
+
+
+        if drained:
+            subtitle("LIMPEZA DE PACOTES RESIDUAIS")
+            log("CLIENTE", f"{drained} pacote(s) atrasado(s) descartado(s) do buffer.")
+            log("PROTOCOLO", "Isso evita que respostas atrasadas afetem o próximo envio.")
+
+
+    def send(self, payload: str, scenario: str = "PERFEITO") -> bool:
+        """
+        Envia uma mensagem ao servidor usando UDP com controle de confiabilidade.
+
+
+        Retorna:
+        - True: se a mensagem foi confirmada por ACK.
+        - False: se a mensagem não foi confirmada após o limite de tentativas.
+        """
+        if not payload.strip():
+            log("CLIENTE", "Mensagem vazia não pode ser enviada.")
+            return False
+
+
+        title("NOVA MENSAGEM DA APLICAÇÃO")
+        log("APLICAÇÃO", f"Mensagem digitada pelo usuário: {payload!r}")
+        log("PROTOCOLO", f"Sequência atual do cliente: {self.seq}")
+        log("PROTOCOLO", f"Cenário de demonstração escolhido: {scenario}")
+        log("PROTOCOLO", f"Limite máximo de tentativas: {MAX_ATTEMPTS}")
+
+
+        attempt = 1
+
+
+        try:
+            while attempt <= MAX_ATTEMPTS:
+                subtitle(f"TENTATIVA {attempt} DE {MAX_ATTEMPTS} || ENVIO DA SEQUÊNCIA {self.seq}")
+
+
+                log("PROTOCOLO", f"Iniciando tentativa {attempt} de envio.")
+                log("PROTOCOLO", "Enquanto o ACK correto não chegar, o pacote poderá ser retransmitido.")
+
+
+                packet = make_data_packet(self.seq, payload, scenario, attempt)
+
+
+                # O timer do timeout começa a contar ANTES do envio, pois no
+                # cenário de "atraso de dados" o atraso ocorre justamente
+                # durante o envio (simulando atraso de rede em trânsito).
+                deadline = time.monotonic() + self.timeout
+
+
+                send_data(self.sock, self.server_address, packet)
+
+
+                subtitle("ESPERA PELO ACK")
+                log("CLIENTE", f"Aguardando ACK {self.seq}.")
+                log("TIMEOUT", f"Tempo máximo de espera por tentativa: {self.timeout} segundo(s).")
+                log("PROTOCOLO", "Se o ACK não chegar no prazo, essa tentativa será considerada falha.")
+
+
+                timed_out = False
+
+
+                while True:
+                    remaining_time = deadline - time.monotonic()
+
+
+                    if remaining_time <= 0:
+                        log("TIMEOUT", f"ACK {self.seq} não chegou dentro do tempo limite.")
+                        log("PROTOCOLO", "Essa tentativa falhou. O cliente tentará novamente, se ainda houver tentativas.")
+                        timed_out = True
+                        break
+
+
+                    self.sock.settimeout(remaining_time)
+
+
+                    try:
+                        data, server_address = self.sock.recvfrom(BUFFER_SIZE)
+
+
+                    except socket.timeout:
+                        log("TIMEOUT", f"ACK {self.seq} não chegou dentro do tempo limite.")
+                        log("PROTOCOLO", "Essa tentativa falhou. O cliente tentará novamente, se ainda houver tentativas.")
+                        timed_out = True
+                        break
+
+
+                    except ConnectionResetError:
+                        log("ERRO", "O sistema informou que o destino UDP recusou ou não respondeu.")
+                        log("ERRO", "Isso pode acontecer se o servidor não estiver rodando ou se a porta estiver incorreta.")
+                        log("PROTOCOLO", "Tratando como perda de ACK.")
+                        timed_out = True
+                        break
+
+
+                    subtitle("ACK RECEBIDO")
+                    log("UDP", f"Datagrama recebido de {server_address}.")
+                    log("UDP", f"Bytes recebidos: {len(data)}")
+
+
+                    try:
+                        ack_packet = decode_packet(data)
+                    except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+                        log("CLIENTE", "Não foi possível decodificar o ACK recebido.")
+                        log("CLIENTE", "O cliente continuará esperando um ACK válido até o timeout.")
+                        continue
+
+
+                    log("CLIENTE", "ACK decodificado com sucesso.")
+                    log("ACK", f"Tipo: {ack_packet.kind}")
+                    log("ACK", f"Seq: {ack_packet.seq}")
+                    log("ACK", f"Ack: {ack_packet.ack}")
+                    log("ACK", f"Payload: {ack_packet.payload!r}")
+                    log("ACK", f"Checksum: {ack_packet.checksum}")
+
+
+                    log("CLIENTE", "Verificando integridade do ACK com CRC32...")
+
+
+                    if is_corrupt(ack_packet):
+                        log("CLIENTE", "ACK descartado por corrupção.")
+                        log("PROTOCOLO", "O cliente continuará aguardando até timeout ou ACK válido.")
+                        continue
+
+
+                    if ack_packet.kind != "ACK":
+                        log("CLIENTE", f"Tipo de pacote inesperado: {ack_packet.kind}.")
+                        log("CLIENTE", "O cliente esperava um pacote do tipo ACK.")
+                        continue
+
+
+                    if ack_packet.ack != self.seq:
+                        log("CLIENTE", f"ACK inesperado recebido: {ack_packet.ack}.")
+                        log("CLIENTE", f"ACK esperado: {self.seq}.")
+                        log("PROTOCOLO", "Esse ACK pode ser duplicado, atrasado ou referente a outro pacote.")
+                        log("PROTOCOLO", "O cliente continuará esperando o ACK correto.")
+                        continue
+
+
+                    title("PACOTE CONFIRMADO COM SUCESSO")
+                    log("CLIENTE", f"ACK {ack_packet.ack} recebido corretamente.")
+                    log("PROTOCOLO", f"Pacote seq={self.seq} confirmado pelo servidor.")
+                    log("RESULTADO", "Mensagem enviada com sucesso.")
+
+
+                    self.seq = 1 - self.seq
+
+
+                    log("PROTOCOLO", f"Alternando número de sequência. Próximo pacote usará seq={self.seq}.")
+                    return True
+
+
+                if timed_out:
+                    attempt += 1
+
+
+            title("ENVIO NÃO CONFIRMADO")
+            log("ERRO", f"A mensagem não foi confirmada após {MAX_ATTEMPTS} tentativa(s).")
+            log("ERRO", "Envio considerado sem sucesso.")
+            log("PROTOCOLO", "O cliente desistiu dessa mensagem para evitar loop infinito.")
+            log("PROTOCOLO", f"A sequência atual continuará sendo {self.seq}, pois não houve ACK válido.")
+            log("MENU", "Você pode tentar enviar a mesma mensagem novamente pelo menu.")
+
+
+            return False
+        finally:
+            self._drain_stray_packets()
