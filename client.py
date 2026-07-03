@@ -458,3 +458,120 @@ class UdpReliableClient:
             return False
         finally:
             self._drain_stray_packets()
+
+# ============================================================
+# MENU INTERATIVO DO CLIENTE
+# ============================================================
+
+
+def show_menu() -> None:
+    title("CLIENTE UDP3 - MENU PRINCIPAL")
+    print("|| ---------------- CENÁRIOS DE DEMONSTRAÇÃO ---------------- ||")
+    print("|| 1 || Caso perfeito")
+    print("|| 2 || Perda de dados ")
+    print("|| 3 || Perda de ACK ")
+    print("|| 4 || Atraso de dados ")
+    print("|| 5 || Atraso de ACK ")
+    print("|| ------------------------------------------------------------ ||")
+    print("|| 6 || Enviar mensagem livre (sem falha simulada)")
+    print("|| 7 || Ver configurações do cliente")
+    print("|| 8 || Explicar funcionamento da prática")
+    print("|| 0 || Encerrar cliente")
+    separator("=")
+
+
+
+
+def show_settings() -> None:
+    title("CONFIGURAÇÕES DO CLIENTE")
+    print(f"|| Servidor .................... || {SERVER_HOST}:{SERVER_PORT}")
+    print(f"|| Tamanho do buffer ........... || {BUFFER_SIZE} bytes")
+    print(f"|| Timeout ..................... || {TIMEOUT} segundo(s)")
+    print(f"|| Máximo de tentativas ........ || {MAX_ATTEMPTS}")
+    print(f"|| Atraso proposital de DATA ... || {DATA_DELAY_SECONDS} segundo(s)")
+    print(f"|| Protocolo ................... || UDP + Stop-and-Wait")
+    print(f"|| Sequência ................... || Alternância entre 0 e 1")
+    print(f"|| Modo de simulação ........... || Determinístico (via menu, sem sorteio)")
+    separator("=")
+
+
+
+
+def explain_practice() -> None:
+    title("EXPLICAÇÃO DA PRÁTICA UDP3")
+
+
+    print("|| Esta prática usa sockets UDP reais em Python.")
+    print("|| O cliente envia mensagens para um servidor UDP.")
+    print("|| Como o UDP não garante entrega, foram adicionados controles manuais.")
+    print()
+
+
+    print("|| MECANISMOS IMPLEMENTADOS")
+    print("|| - Checksum CRC32 para detectar corrupção.")
+    print("|| - ACK para confirmar recebimento.")
+    print("|| - Timeout para detectar ausência de resposta.")
+    print("|| - Retransmissão quando o ACK não chega.")
+    print("|| - Limite de tentativas para evitar loop infinito.")
+    print("|| - Número de sequência alternando entre 0 e 1.")
+    print()
+
+
+    print("|| CENÁRIOS DISPONÍVEIS NO MENU")
+    print("|| 1) Perfeito                  -> DATA e ACK chegam normalmente.")
+    print("|| 2) Perda de dados permanente -> o DATA nunca chega ao servidor.")
+    print("|| 3) Perda de ACK permanente   -> o ACK nunca chega ao cliente.")
+    print("|| 4) Atraso de dados permanente -> o DATA sempre chega atrasado.")
+    print("|| 5) Atraso de ACK permanente   -> o ACK sempre chega atrasado.")
+    print("|| A retransmissão do Stop-and-Wait continua ativa (o cliente")
+    print("|| tenta reenviar até MAX_ATTEMPTS vezes), mas como a falha é")
+    print("|| PERMANENTE em todos esses cenários, nenhuma retransmissão")
+    print("|| resolve: a mensagem acaba NÃO sendo confirmada. Isso demonstra")
+    print("|| o limite do protocolo Stop-and-Wait diante de uma falha")
+    print("|| persistente na rede.")
+    print()
+
+
+    print("|| OBJETIVO")
+    print("|| Mostrar como implementar confiabilidade sobre UDP (RDT 3.0).")
+    separator("=")
+
+
+
+
+def read_user_message(default: str) -> str:
+    title("DIGITAR MENSAGEM")
+    print("|| Digite a mensagem que será enviada ao servidor.")
+    print(f"|| Deixe vazio para usar a mensagem padrão: {default!r}")
+    separator("-")
+
+
+    typed = input("Mensagem: ")
+    return typed if typed.strip() else default
+
+
+
+
+def run_scenario(client: "UdpReliableClient", scenario_key: str) -> None:
+    scenario, description = SCENARIOS[scenario_key]
+
+
+    title(f"EXECUTANDO CENÁRIO: {description.upper()}")
+    log("MENU", f"Cenário selecionado: {scenario}")
+
+
+    default_message = f"Mensagem de teste - {description}"
+    message = read_user_message(default_message)
+
+
+    success = client.send(message, scenario=scenario)
+
+
+    if success:
+        log("MENU", "A mensagem foi enviada e confirmada com sucesso.")
+    else:
+        log("MENU", "A mensagem não foi confirmada após o limite de tentativas.")
+        log("MENU", "Você pode tentar executar o cenário novamente pelo menu.")
+
+
+    pause()
