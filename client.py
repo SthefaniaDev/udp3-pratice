@@ -200,6 +200,51 @@ def decode_packet(data: bytes) -> Packet:
     packet_dict = json.loads(json_packet)
     return Packet(**packet_dict)
 
+# ============================================================
+# ENVIO DO DATA (COM SUPORTE A CENÁRIOS DETERMINÍSTICOS)
+# ============================================================
 
+
+def send_data(sock: socket.socket, server_address: tuple[str, int], packet: Packet) -> None:
+    """
+    Envia um pacote DATA ao servidor usando socket UDP real.
+
+
+    Reage ao cenário ativo:
+      - PERDA_DADOS_PERMANENTE em QUALQUER tentativa: o pacote NUNCA é
+        enviado. Nenhuma retransmissão resolve, e a mensagem acaba não
+        sendo confirmada.
+      - ATRASO_DADOS_PERMANENTE em QUALQUER tentativa: o envio é sempre
+        atrasado além do timeout, então nenhuma retransmissão resolve.
+      - Qualquer outro caso (ex.: PERFEITO): o pacote é enviado normalmente
+        e imediatamente.
+    """
+    subtitle("ENVIO DO PACOTE PELO SOCKET UDP")
+    log("CLIENTE", f"Preparando envio do pacote seq={packet.seq}.")
+    log("UDP", f"Destino configurado: {server_address[0]}:{server_address[1]}")
+    log("CENÁRIO", f"Cenário ativo: {packet.scenario} (tentativa {packet.attempt})")
+
+
+    if packet.scenario == "PERDA_DADOS_PERMANENTE":
+        log("SIMULAÇÃO", "Cenário PERDA_DADOS_PERMANENTE ativo.")
+        log("SIMULAÇÃO", "O pacote DATA NÃO será enviado, em NENHUMA tentativa.")
+        log("PROTOCOLO", "O cliente continuará esperando o ACK até ocorrer timeout.")
+        return
+
+
+    if packet.scenario == "ATRASO_DADOS_PERMANENTE":
+        log("SIMULAÇÃO", "Cenário ATRASO_DADOS_PERMANENTE ativo.")
+        log("SIMULAÇÃO", f"O envio será atrasado propositalmente em {DATA_DELAY_SECONDS}s, em TODA tentativa.")
+        log("PROTOCOLO", "Esse atraso deverá consumir o timeout antes mesmo da resposta.")
+        time.sleep(DATA_DELAY_SECONDS)
+        log("SIMULAÇÃO", "Atraso concluído. Enviando o pacote (agora atrasado) ao servidor.")
+
+
+    encoded_packet = encode_packet(packet)
+    sock.sendto(encoded_packet, server_address)
+
+
+    log("UDP", "Pacote DATA enviado via socket UDP real.")
+    log("UDP", f"Bytes enviados: {len(encoded_packet)}")
 
 
