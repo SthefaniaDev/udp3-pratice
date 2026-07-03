@@ -108,3 +108,75 @@ def log(section: str, message: str) -> None:
 
 def pause() -> None:
     input("\nPressione ENTER para continuar...")
+
+# ============================================================
+# CHECKSUM
+# ============================================================
+
+
+def calculate_checksum(kind: str, seq: int, ack: int, payload: str) -> int:
+    """
+    Calcula o checksum CRC32 usando tipo, sequência, ACK e payload.
+    """
+    raw_data = f"{kind}|{seq}|{ack}|{payload}".encode("utf-8")
+    return zlib.crc32(raw_data) & 0xFFFFFFFF
+
+
+
+
+def make_data_packet(seq: int, payload: str, scenario: str, attempt: int) -> Packet:
+    """
+    Cria um pacote DATA com número de sequência, mensagem e metadados
+    do cenário de demonstração ativo.
+    """
+    checksum = calculate_checksum("DATA", seq, -1, payload)
+
+
+    subtitle("CRIAÇÃO DO PACOTE DATA")
+    log("CLIENTE", f"Criando pacote DATA.")
+    log("PACOTE", f"Tipo: DATA")
+    log("PACOTE", f"Sequência: {seq}")
+    log("PACOTE", f"ACK: -1")
+    log("PACOTE", f"Mensagem: {payload!r}")
+    log("PACOTE", f"Cenário: {scenario} (tentativa {attempt})")
+    log("CHECKSUM", f"Checksum calculado com CRC32: {checksum}")
+
+
+    return Packet(
+        kind="DATA",
+        seq=seq,
+        ack=-1,
+        payload=payload,
+        checksum=checksum,
+        scenario=scenario,
+        attempt=attempt,
+    )
+
+
+
+
+def is_corrupt(packet: Packet) -> bool:
+    """
+    Verifica se o pacote recebido foi corrompido.
+    """
+    expected_checksum = calculate_checksum(
+        packet.kind,
+        packet.seq,
+        packet.ack,
+        packet.payload
+    )
+
+
+    if packet.checksum != expected_checksum:
+        log("CHECKSUM", "Checksum inválido. O ACK foi alterado ou chegou corrompido.")
+        log("CHECKSUM", f"Checksum recebido: {packet.checksum}")
+        log("CHECKSUM", f"Checksum esperado: {expected_checksum}")
+        return True
+
+
+    log("CHECKSUM", "Checksum válido. O ACK chegou íntegro.")
+    return False
+
+
+
+
