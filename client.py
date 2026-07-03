@@ -575,3 +575,68 @@ def run_scenario(client: "UdpReliableClient", scenario_key: str) -> None:
 
 
     pause()
+
+# ============================================================
+# EXECUÇÃO DO CLIENTE
+# ============================================================
+
+
+def main() -> None:
+    client = UdpReliableClient(SERVER_HOST, SERVER_PORT, TIMEOUT)
+
+
+    try:
+        while True:
+            show_menu()
+            option = input("Escolha uma opção: ").strip()
+
+
+            if option in SCENARIOS:
+                run_scenario(client, option)
+
+
+            elif option == "6":
+                message = read_user_message("Mensagem livre")
+
+
+                success = client.send(message, scenario="PERFEITO")
+
+
+                if success:
+                    log("MENU", "A mensagem foi enviada e confirmada com sucesso.")
+                else:
+                    log("MENU", "A mensagem não foi confirmada após o limite de tentativas.")
+
+
+                pause()
+
+
+            elif option == "7":
+                show_settings()
+                pause()
+
+
+            elif option == "8":
+                explain_practice()
+                pause()
+
+
+            elif option == "0":
+                title("ENCERRANDO CLIENTE UDP3")
+                log("CLIENTE", "O usuário solicitou o encerramento do cliente.")
+                break
+
+
+            else:
+                log("MENU", "Opção inválida. Escolha 1 a 8 ou 0.")
+                pause()
+
+
+    finally:
+        client.close()
+
+
+
+
+if __name__ == "__main__":
+    main()
