@@ -177,6 +177,29 @@ def is_corrupt(packet: Packet) -> bool:
     log("CHECKSUM", "Checksum válido. O ACK chegou íntegro.")
     return False
 
+# ============================================================
+# SERIALIZAÇÃO
+# ============================================================
+
+
+def encode_packet(packet: Packet) -> bytes:
+    """
+    Converte o pacote para JSON em bytes antes do envio pelo UDP.
+    """
+    json_packet = json.dumps(asdict(packet))
+    return json_packet.encode("utf-8")
+
+
+
+
+def decode_packet(data: bytes) -> Packet:
+    """
+    Converte bytes recebidos pelo socket UDP em um objeto Packet.
+    """
+    json_packet = data.decode("utf-8")
+    packet_dict = json.loads(json_packet)
+    return Packet(**packet_dict)
+
 
 
 
