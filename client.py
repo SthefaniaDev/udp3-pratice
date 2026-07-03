@@ -67,3 +67,44 @@ class Packet:
     checksum: int
     scenario: str = "PERFEITO"
     attempt: int = 1
+
+# ============================================================
+# FUNÇÕES AUXILIARES DE FORMATAÇÃO
+# ============================================================
+
+
+def separator(symbol: str = "=") -> None:
+    print(symbol * LINE_SIZE)
+
+
+
+
+def title(text: str) -> None:
+    print()
+    separator("=")
+    print(f"|| {text.center(LINE_SIZE - 6)} ||")
+    separator("=")
+
+
+
+
+def subtitle(text: str) -> None:
+    print()
+    separator("-")
+    print(f"|| {text}")
+    separator("-")
+
+
+
+
+def log(section: str, message: str) -> None:
+    """
+    Exibe mensagens padronizadas para facilitar a apresentação da prática.
+    """
+    print(f"[{section}] {message}")
+
+
+
+
+def pause() -> None:
+    input("\nPressione ENTER para continuar...")
